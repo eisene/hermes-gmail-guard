@@ -24,7 +24,7 @@ family or household bot where several people's inboxes are connected.
 hermes plugins install eisene/hermes-gmail-guard --enable
 ```
 
-It expects the MCP server to be registered as `gmail`, so tools appear as `mcp_gmail_*`.
+It expects the MCP server to be registered as `gmail`, so tools appear as `mcp__gmail__*` (older Hermes: `mcp_gmail_*`; both are matched).
 
 Optional `$HERMES_HOME/gmail-guard.json`:
 

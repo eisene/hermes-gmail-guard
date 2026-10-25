@@ -59,6 +59,15 @@ class GuardTest(unittest.TestCase):
             r = g._on_pre_tool_call(f"mcp_gmail_{t}", {"account": "alice"}, "s")
             self.assertEqual(r["action"], "block", t)
 
+    def test_double_underscore_naming(self):
+        # Live Hermes names MCP tools mcp__<server>__<tool>; both forms must be guarded.
+        r = g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "alice"}, "s")
+        self.assertEqual(r["action"], "approve")
+        r = g._on_pre_tool_call("mcp__gmail__gmail_send", {"account": "alice"}, "s")
+        self.assertEqual(r["action"], "block")
+        self.assertIsNone(g._on_pre_tool_call("mcp__gmail__gmail_list_accounts", {}, "s"))
+        self.assertIsNone(g._on_pre_tool_call("mcp__gmailx__gmail_list", {"account": "a"}, "s"))
+
     def test_requires_account(self):
         r = g._on_pre_tool_call("mcp_gmail_gmail_search", {"query": "x"}, "s")
         self.assertEqual(r["action"], "block")

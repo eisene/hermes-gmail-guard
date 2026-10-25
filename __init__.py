@@ -1,17 +1,17 @@
 """gmail-guard: human approval for every Gmail read the agent makes, naming the inbox and the asker.
 
 Pairs with the gmail-multi-mcp server (fork: github.com/eisene/gmail-multi-mcp) registered in
-Hermes as MCP server ``gmail``, whose tools surface as ``mcp_gmail_<tool>``.
+Hermes as MCP server ``gmail``, whose tools surface as ``mcp__gmail__<tool>`` (or ``mcp_gmail_<tool>``).
 
 * ``pre_llm_call`` remembers, per session, the gateway-verified sender ID of the latest turn
   (the same ``sender_id`` the discord-sender-id plugin uses; it comes from the platform event,
   not message text, so it cannot be typed).
-* ``pre_tool_call`` on any ``mcp_gmail_*`` tool that takes an ``account``:
+* ``pre_tool_call`` on any of that server's tools that takes an ``account``:
   - escalates to Hermes's human-approval gate with a message like
     "Search Alice's inbox for `from:@school.org newer_than:7d` — asked by <@1234>", and an
     allowlist key of ``gmail:<account>`` so "Allow for session" covers further reads of the SAME
     inbox in this session, never a different inbox;
-  - blocks any ``mcp_gmail_*`` tool not on the read-only allowlist (defense in depth: the server
+  - blocks any of its tools not on the read-only allowlist (defense in depth: the server
     runs in locked mode and should not expose them anyway).
 
 The approval gate fails closed: if no human can answer (or it times out), the call is blocked.
@@ -71,9 +71,15 @@ def _config() -> dict[str, Any]:
         return {}
 
 
-def _prefix(cfg: dict[str, Any]) -> str:
-    server = str(cfg.get("server") or "gmail")
-    return "mcp_" + re.sub(r"[^A-Za-z0-9_]", "_", server) + "_"
+def _tool_of(tool_name: str, cfg: dict[str, Any]) -> Optional[str]:
+    """Bare MCP tool name if ``tool_name`` belongs to our server, else None.
+
+    Hermes has used both ``mcp_<server>_<tool>`` and ``mcp__<server>__<tool>`` for MCP tools, so
+    match any run of underscores around the server name.
+    """
+    server = re.sub(r"[^A-Za-z0-9_]", "_", str(cfg.get("server") or "gmail"))
+    m = re.match(rf"^mcp_+{re.escape(server)}_+(.+)$", tool_name or "")
+    return m.group(1) if m else None
 
 
 def _clip(value: Any, n: int = 160) -> str:
@@ -132,10 +138,9 @@ def _describe(tool: str, args: dict[str, Any], inbox: str) -> str:
 
 def _on_pre_tool_call(tool_name: str = "", args: Any = None, session_id: str = "", **_: Any) -> Optional[dict]:
     cfg = _config()
-    prefix = _prefix(cfg)
-    if not tool_name.startswith(prefix):
+    tool = _tool_of(tool_name, cfg)
+    if tool is None:
         return None
-    tool = tool_name[len(prefix):]
     if tool not in READ_TOOLS:
         return {
             "action": "block",
