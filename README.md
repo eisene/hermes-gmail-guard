@@ -9,7 +9,7 @@ family or household bot where several people's inboxes are connected.
 
 - **Asks before every inbox read.** It uses Hermes's own approval gate (CLI prompt or the
   Discord/Telegram/Slack buttons). The prompt names the inbox, the query and who asked:
-  > Search Alice's inbox for `from:@school.org newer_than:7d`, asked by Bob (<@1234…>)
+  > 📬 **Alice's inbox (alice@example.com)**: list messages matching `from:@school.org newer_than:7d`. Asked by Bob (<@1234…>).
 - **One approval key per inbox.** "Allow for session" covers further reads of the *same* inbox in
   that session, never a different one.
 - **Shows the gateway-verified sender.** The asker comes from the platform event's user ID, not

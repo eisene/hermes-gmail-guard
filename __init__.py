@@ -19,7 +19,7 @@ The approval gate fails closed: if no human can answer (or it times out), the ca
 Optional config ``$HERMES_HOME/gmail-guard.json``::
 
     {"people": {"123456789012345678": "Alice"},
-     "inboxes": {"alice": "Alice's inbox", "bob": "Bob's inbox"},
+     "inboxes": {"alice": "Alice's inbox (alice@example.com)", "bob": "Bob's inbox"},
      "server": "gmail"}
 
 ``people`` maps Discord user IDs to names for the prompt; ``inboxes`` maps the account label (or
@@ -107,33 +107,36 @@ def _asker(session_id: str, cfg: dict[str, Any]) -> str:
     with _lock:
         sid = _sender_by_session.get(session_id or "", "")
     if not sid:
-        return "asked from a non-chat context (cron or CLI)"
+        return "Asked from a non-chat context (cron or CLI)"
     name = (cfg.get("people") or {}).get(sid)
     if _SNOWFLAKE.match(sid):
-        return f"asked by {name} (<@{sid}>)" if name else f"asked by <@{sid}>"
-    return f"asked by {name or sid}"
+        return f"Asked by {name} (<@{sid}>)" if name else f"Asked by <@{sid}>"
+    return f"Asked by {name or sid}"
 
 
-def _describe(tool: str, args: dict[str, Any], inbox: str) -> str:
+def _action(tool: str, args: dict[str, Any]) -> str:
+    """What will be done, phrased to follow the inbox name."""
     if tool == "gmail_search":
-        what = f"Search {inbox} for `{_clip(args.get('query', ''))}`"
-        if args.get("include_body"):
-            what += " (full bodies)"
-        return what
+        what = f"search for `{_clip(args.get('query', ''))}`"
+        return what + (" (full message bodies)" if args.get("include_body") else "")
     if tool == "gmail_list":
         q = _clip(args.get("query") or "") or "all mail"
-        page = " (next page)" if args.get("page_token") else ""
-        return f"List {inbox}: `{q}`{page}"
+        return f"list messages matching `{q}`" + (" (next page)" if args.get("page_token") else "")
     if tool == "gmail_grep":
         q = _clip(args.get("query") or "") or "all mail"
-        return f"Regex-search {inbox} for /{_clip(args.get('pattern', ''), 80)}/ within `{q}`"
+        return f"regex `{_clip(args.get('pattern', ''), 80)}` over messages matching `{q}`"
     if tool == "gmail_read_message":
-        return f"Read one message in {inbox} (id {_clip(args.get('message_id', ''), 40)})"
+        return f"read one full message (id {_clip(args.get('message_id', ''), 40)})"
     if tool == "gmail_read_thread":
-        return f"Read a whole thread in {inbox} (id {_clip(args.get('thread_id', ''), 40)})"
+        return f"read a full thread (id {_clip(args.get('thread_id', ''), 40)})"
     if tool == "gmail_list_labels":
-        return f"List the labels in {inbox}"
-    return f"{tool} on {inbox}"
+        return "list labels"
+    return tool
+
+
+def _plain(s: str) -> str:
+    """Strip Discord/Markdown control characters from model-supplied text shown outside code spans."""
+    return re.sub(r"[*_~`|>\\<@#]", "", s)[:60]
 
 
 def _on_pre_tool_call(tool_name: str = "", args: Any = None, session_id: str = "", **_: Any) -> Optional[dict]:
@@ -153,8 +156,9 @@ def _on_pre_tool_call(tool_name: str = "", args: Any = None, session_id: str = "
     if not account:
         return {"action": "block", "message": "gmail-guard: every Gmail read must name an account."}
     inboxes = cfg.get("inboxes") or {}
-    inbox = inboxes.get(account) or inboxes.get(account.lower()) or f"inbox '{account}'"
-    message = f"{_describe(tool, args, inbox)} — {_asker(session_id, cfg)}"
+    inbox = inboxes.get(account) or inboxes.get(account.lower()) or f"unknown inbox '{_plain(account)}'"
+    # Inbox first and bold: it's the thing a human most needs to check on the card.
+    message = f"📬 **{inbox}**: {_action(tool, args)}. {_asker(session_id, cfg)}."
     # One allowlist key per inbox: "Allow for session" covers later reads of THIS inbox only.
     return {"action": "approve", "message": message, "rule_key": f"gmail:{account.lower()}"}
 

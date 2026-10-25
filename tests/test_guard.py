@@ -37,14 +37,14 @@ class GuardTest(unittest.TestCase):
         r = g._on_pre_tool_call("mcp_gmail_gmail_search", {"account": "alice", "query": "from:@school.org"}, "s1")
         self.assertEqual(r["action"], "approve")
         self.assertEqual(r["rule_key"], "gmail:alice")
-        self.assertIn("Search Alice's inbox for `from:@school.org`", r["message"])
-        self.assertIn(f"asked by Alice (<@{ALICE}>)", r["message"])
+        self.assertTrue(r["message"].startswith("📬 **Alice's inbox**: search for `from:@school.org`"), r["message"])
+        self.assertIn(f"Asked by Alice (<@{ALICE}>)", r["message"])
 
     def test_rule_key_is_per_inbox(self):
         a = g._on_pre_tool_call("mcp_gmail_gmail_list", {"account": "alice"}, "s")
         b = g._on_pre_tool_call("mcp_gmail_gmail_list", {"account": "bob"}, "s")
         self.assertNotEqual(a["rule_key"], b["rule_key"])
-        self.assertIn("inbox 'bob'", b["message"])
+        self.assertIn("**unknown inbox 'bob'**", b["message"])
 
     def test_unknown_sender_and_cron(self):
         r = g._on_pre_tool_call("mcp_gmail_gmail_read_message", {"account": "alice", "message_id": "abc"}, "nope")
@@ -52,7 +52,7 @@ class GuardTest(unittest.TestCase):
         g._on_pre_llm_call(session_id="s2", sender_id="999999999999999999")
         r = g._on_pre_tool_call("mcp_gmail_gmail_grep", {"account": "alice", "pattern": "drum", "query": "newer_than:7d"}, "s2")
         self.assertIn("<@999999999999999999>", r["message"])
-        self.assertIn("/drum/", r["message"])
+        self.assertIn("regex `drum`", r["message"])
 
     def test_blocks_write_and_setup_tools(self):
         for t in ("gmail_send", "gmail_trash", "gmail_connect_account", "gmail_configure_oauth_client"):
@@ -67,6 +67,10 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(r["action"], "block")
         self.assertIsNone(g._on_pre_tool_call("mcp__gmail__gmail_list_accounts", {}, "s"))
         self.assertIsNone(g._on_pre_tool_call("mcp__gmailx__gmail_list", {"account": "a"}, "s"))
+
+    def test_model_supplied_account_cannot_inject_markdown(self):
+        r = g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "**x** <@1>"}, "s")
+        self.assertIn("unknown inbox 'x 1'", r["message"])
 
     def test_requires_account(self):
         r = g._on_pre_tool_call("mcp_gmail_gmail_search", {"query": "x"}, "s")
