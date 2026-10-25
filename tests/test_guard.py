@@ -19,9 +19,11 @@ class GuardTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ["HERMES_HOME"] = self.tmp.name
+        g.SYSTEM_CONFIG = Path(self.tmp.name, "no-system-config.json")
         Path(self.tmp.name, "gmail-guard.json").write_text(json.dumps({
             "people": {ALICE: "Alice"},
             "inboxes": {"alice": "Alice's inbox"},
+            "cron": {"abc123def456": ["alice"]},
         }))
         g._sender_by_session.clear()
 
@@ -71,6 +73,42 @@ class GuardTest(unittest.TestCase):
     def test_model_supplied_account_cannot_inject_markdown(self):
         r = g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "**x** <@1>"}, "s")
         self.assertIn("unknown inbox 'x 1'", r["message"])
+
+    def _use_system_config(self):
+        sysp = Path(self.tmp.name, "etc.json")
+        sysp.write_text(Path(self.tmp.name, "gmail-guard.json").read_text())
+        g.SYSTEM_CONFIG = sysp
+
+    def test_cron_allowlist_ignored_in_user_writable_config(self):
+        sid = "cron_abc123def456_20261025_220000"
+        r = g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "alice"}, sid)
+        self.assertEqual(r["action"], "approve")
+
+    def test_allowlisted_cron_job_skips_prompt_for_its_inbox_only(self):
+        self._use_system_config()
+        sid = "cron_abc123def456_20261025_220000"
+        self.assertIsNone(g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "alice"}, sid))
+        self.assertIsNone(g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "ALICE"}, sid))
+        r = g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "bob"}, sid)
+        self.assertEqual(r["action"], "approve")
+        r = g._on_pre_tool_call("mcp__gmail__gmail_send", {"account": "alice"}, sid)
+        self.assertEqual(r["action"], "block")
+
+    def test_other_cron_jobs_and_lookalike_sessions_still_prompt(self):
+        self._use_system_config()
+        for sid in ("cron_ffffffffffff_20261025_220000", "cron_abc123def456", "xcron_abc123def456_20261025_220000",
+                    "abc123def456"):
+            r = g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "alice"}, sid)
+            self.assertEqual(r["action"], "approve", sid)
+
+    def test_system_config_overrides_user_config(self):
+        sysp = Path(self.tmp.name, "etc.json")
+        sysp.write_text(json.dumps({"inboxes": {"alice": "SYSTEM"}}))
+        g.SYSTEM_CONFIG = sysp
+        sid = "cron_abc123def456_20261025_220000"
+        r = g._on_pre_tool_call("mcp__gmail__gmail_list", {"account": "alice"}, sid)
+        self.assertEqual(r["action"], "approve")  # user file's cron allowlist ignored
+        self.assertIn("**SYSTEM**", r["message"])
 
     def test_requires_account(self):
         r = g._on_pre_tool_call("mcp_gmail_gmail_search", {"query": "x"}, "s")

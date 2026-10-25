@@ -26,15 +26,24 @@ hermes plugins install eisene/hermes-gmail-guard --enable
 
 It expects the MCP server to be registered as `gmail`, so tools appear as `mcp__gmail__*` (older Hermes: `mcp_gmail_*`; both are matched).
 
-Optional `$HERMES_HOME/gmail-guard.json`:
+Config: `/etc/hermes-gmail-guard.json` (root-owned, recommended; when it exists the per-user file is
+ignored), else `$HERMES_HOME/gmail-guard.json`:
 
 ```json
 {
   "server": "gmail",
   "people":  {"123456789012345678": "Alice"},
-  "inboxes": {"alice": "Alice's inbox", "bob": "Bob's inbox"}
+  "inboxes": {"alice": "Alice's inbox (alice@example.com)", "bob": "Bob's inbox"},
+  "cron":    {"abc123def456": ["alice"]}
 }
 ```
+
+## Scheduled jobs
+
+Cron runs have nobody to click, so Hermes blocks their approvals (`approvals.cron_mode: deny`).
+`cron` maps a cron job ID to the inboxes that job may read without a prompt. It's honored only
+from the root-owned `/etc` file, so the agent can't add itself. Other jobs, other inboxes and any
+non-read tool are still blocked.
 
 ## What it does not do
 

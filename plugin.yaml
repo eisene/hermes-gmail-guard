@@ -1,5 +1,5 @@
 name: gmail-guard
-version: 0.1.2
+version: 0.2.0
 description: "Asks a human to approve every Gmail read by the gmail-multi-mcp server, naming the inbox, the query and who asked; one approval key per inbox; refuses non-read Gmail tools."
 author: "Eugene Eisenstein (@eisene)"
 provides_hooks:

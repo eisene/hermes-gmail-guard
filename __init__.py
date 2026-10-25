@@ -16,14 +16,18 @@ Hermes as MCP server ``gmail``, whose tools surface as ``mcp__gmail__<tool>`` (o
 
 The approval gate fails closed: if no human can answer (or it times out), the call is blocked.
 
-Optional config ``$HERMES_HOME/gmail-guard.json``::
+Config: ``/etc/hermes-gmail-guard.json`` (root-owned, preferred; when present the per-user file is
+ignored) or ``$HERMES_HOME/gmail-guard.json``::
 
     {"people": {"123456789012345678": "Alice"},
      "inboxes": {"alice": "Alice's inbox (alice@example.com)", "bob": "Bob's inbox"},
-     "server": "gmail"}
+     "server": "gmail",
+     "cron": {"<cron job id>": ["alice"]}}
 
 ``people`` maps Discord user IDs to names for the prompt; ``inboxes`` maps the account label (or
-address) the model passes to a display name. Unknown values are shown verbatim.
+address) the model passes to a display name. ``cron`` lists scheduled jobs allowed to read the
+given inboxes with no prompt (cron has nobody to click; every other cron read is blocked by
+``approvals.cron_mode``). ``cron`` is honored only from the root-owned /etc file.
 
 What this does NOT do: stop a model with a shell from talking to the mail server directly. The
 server's own protections (Google-enforced read-only scope, redaction, untrusted-content fencing)
@@ -59,16 +63,43 @@ _sender_by_session: dict[str, str] = {}
 _MAX_SESSIONS = 2000
 
 
+# Root-owned system config wins: the agent cannot edit it. If it exists, the per-user file is
+# ignored entirely, so the agent cannot widen its own cron allowlist by writing to HERMES_HOME.
+SYSTEM_CONFIG = Path("/etc/hermes-gmail-guard.json")
+
+# Hermes names cron sessions cron_<job_id>_<YYYYmmdd>_<HHMMSS>; the scheduler sets it, not the model.
+_CRON_SESSION = re.compile(r"^cron_([0-9A-Za-z]+)_\d{8}_\d{6}$")
+
+
 def _home() -> Path:
     return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 
 
+def _config_path() -> Path:
+    return SYSTEM_CONFIG if SYSTEM_CONFIG.exists() else _home() / "gmail-guard.json"
+
+
 def _config() -> dict[str, Any]:
     try:
-        data = json.loads((_home() / "gmail-guard.json").read_text())
+        data = json.loads(_config_path().read_text())
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def _cron_allows(session_id: str, account: str, cfg: dict[str, Any]) -> bool:
+    """True if this is a cron run of a job allowlisted for this inbox in ``cfg["cron"]``.
+
+    Honored ONLY from the root-owned system config: an allowlist in a file the agent can write
+    would let the agent approve itself.
+    """
+    if _config_path() != SYSTEM_CONFIG:
+        return False
+    m = _CRON_SESSION.match(session_id or "")
+    if not m:
+        return False
+    allowed = (cfg.get("cron") or {}).get(m.group(1)) or []
+    return isinstance(allowed, list) and account.lower() in {str(a).lower() for a in allowed}
 
 
 def _tool_of(tool_name: str, cfg: dict[str, Any]) -> Optional[str]:
@@ -155,6 +186,8 @@ def _on_pre_tool_call(tool_name: str = "", args: Any = None, session_id: str = "
     account = str(args.get("account") or "").strip()
     if not account:
         return {"action": "block", "message": "gmail-guard: every Gmail read must name an account."}
+    if _cron_allows(session_id, account, cfg):
+        return None  # pre-approved scheduled job for this inbox; nobody is there to click
     inboxes = cfg.get("inboxes") or {}
     inbox = inboxes.get(account) or inboxes.get(account.lower()) or f"unknown inbox '{_plain(account)}'"
     # Inbox first and bold: it's the thing a human most needs to check on the card.
