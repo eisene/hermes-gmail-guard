@@ -8,7 +8,7 @@ Hermes as MCP server ``gmail``, whose tools surface as ``mcp_gmail_<tool>``.
   not message text, so it cannot be typed).
 * ``pre_tool_call`` on any ``mcp_gmail_*`` tool that takes an ``account``:
   - escalates to Hermes's human-approval gate with a message like
-    "Search Eugene's inbox for `from:@school.org newer_than:7d` — asked by <@1234>", and an
+    "Search Alice's inbox for `from:@school.org newer_than:7d` — asked by <@1234>", and an
     allowlist key of ``gmail:<account>`` so "Allow for session" covers further reads of the SAME
     inbox in this session, never a different inbox;
   - blocks any ``mcp_gmail_*`` tool not on the read-only allowlist (defense in depth: the server
@@ -18,8 +18,8 @@ The approval gate fails closed: if no human can answer (or it times out), the ca
 
 Optional config ``$HERMES_HOME/gmail-guard.json``::
 
-    {"people": {"1234567890123456": "Eugene"},
-     "inboxes": {"eugene": "Eugene's inbox", "crystal": "Crystal's inbox"},
+    {"people": {"123456789012345678": "Alice"},
+     "inboxes": {"alice": "Alice's inbox", "bob": "Bob's inbox"},
      "server": "gmail"}
 
 ``people`` maps Discord user IDs to names for the prompt; ``inboxes`` maps the account label (or
